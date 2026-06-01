@@ -1,6 +1,6 @@
 const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
-const QRCode = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const pino = require('pino');
 const path = require('path');
 
@@ -10,6 +10,7 @@ app.use(express.json());
 let sock = null;
 let qrCode = null;
 let isConnected = false;
+let lastQR = null;
 
 const logger = pino();
 
@@ -26,8 +27,11 @@ async function connectWhatsApp() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      QRCode.generate(qr, { small: true });
-      qrCode = qr;
+      try {
+        lastQR = await QRCode.toDataURL(qr);
+      } catch (err) {
+        console.error('Erro ao gerar QR:', err);
+      }
     }
 
     if (connection === 'close') {
@@ -39,12 +43,40 @@ async function connectWhatsApp() {
       }
     } else if (connection === 'open') {
       isConnected = true;
+      lastQR = null;
       console.log('✅ WhatsApp conectado!');
     }
   });
 
   sock.ev.on('creds.update', saveCreds);
 }
+
+// GET para página principal com QR
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Baileys WhatsApp Server</title>
+      <style>
+        body { font-family: Arial; text-align: center; padding: 50px; }
+        img { max-width: 300px; margin: 20px; }
+        .status { font-size: 20px; margin: 20px; }
+        .connected { color: green; }
+        .disconnected { color: red; }
+      </style>
+    </head>
+    <body>
+      <h1>📱 Baileys WhatsApp Server</h1>
+      <div class="status ${isConnected ? 'connected' : 'disconnected'}">
+        Status: ${isConnected ? '✅ Conectado' : '⏳ Aguardando QR Code'}
+      </div>
+      ${lastQR ? `<img src="${lastQR}" alt="QR Code" />` : '<p>Gerando QR Code...</p>'}
+      <p><a href="/status">Ver Status JSON</a></p>
+    </body>
+    </html>
+  `);
+});
 
 // POST para enviar mensagens
 app.post('/send-message', async (req, res) => {
@@ -59,7 +91,6 @@ app.post('/send-message', async (req, res) => {
       return res.status(400).json({ error: 'Phone e message são obrigatórios' });
     }
 
-    // Formata o número
     const cleanPhone = phone.replace(/\D/g, '');
     const jid = cleanPhone.endsWith('@s.whatsapp.net') ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
 
@@ -76,7 +107,7 @@ app.post('/send-message', async (req, res) => {
 app.get('/status', (req, res) => {
   res.json({
     connected: isConnected,
-    qrCode: qrCode,
+    hasQR: !!lastQR,
   });
 });
 
