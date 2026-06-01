@@ -1,5 +1,16 @@
-require('./crypto-setup.js');
+// ============ POLYFILL CRYPTO - DEVE SER A PRIMEIRA LINHA ============
+try {
+  const { webcrypto } = require('crypto');
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto,
+    writable: false,
+    configurable: true,
+  });
+} catch (e) {
+  console.error('Falha ao configurar crypto:', e);
+}
 
+// ============ IMPORTS ============
 const express = require('express');
 const {
   default: makeWASocket,
