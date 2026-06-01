@@ -1,7 +1,4 @@
-const { webcrypto } = require('crypto');
-if (!globalThis.crypto) {
-  globalThis.crypto = webcrypto;
-}
+require('./crypto-setup.js');
 
 const express = require('express');
 const {
@@ -104,4 +101,68 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <title>Baileys WhatsApp</title>
-      <meta http-equiv="refres
+      <meta http-equiv="refresh" content="3">
+      <style>
+        body { font-family: Arial; text-align: center; padding: 40px; background: #f0f0f0; }
+        .container { background: white; padding: 30px; border-radius: 10px; max-width: 500px; margin: 0 auto; }
+        h1 { color: #25D366; }
+        .status { font-size: 18px; margin: 20px 0; padding: 15px; border-radius: 5px; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        img { max-width: 350px; margin: 20px 0; border: 2px solid #25D366; border-radius: 8px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>📱 Baileys WhatsApp</h1>
+        <div class="status ${isConnected ? 'connected' : 'disconnected'}">
+          ${isConnected ? '✅ CONECTADO' : '⏳ AGUARDANDO SCAN'}
+        </div>
+        ${qrLink
+          ? `<p>Escaneie com seu WhatsApp:</p><img src="${qrLink}" alt="QR Code">`
+          : `<p>${isConnected ? 'Sessão ativa!' : 'Gerando QR Code... (atualiza em 3s)'}</p>`
+        }
+        <p><a href="/status">Status JSON</a></p>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+app.post('/send-message', async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+
+    if (!isConnected || !sock) {
+      return res.status(503).json({ error: 'WhatsApp não conectado' });
+    }
+
+    if (!phone || !message) {
+      return res.status(400).json({ error: 'phone e message são obrigatórios' });
+    }
+
+    const cleanPhone = phone.replace(/\D/g, '');
+    const jid = `${cleanPhone}@s.whatsapp.net`;
+
+    await sock.sendMessage(jid, { text: message });
+
+    res.json({ success: true, to: jid });
+  } catch (error) {
+    console.error('Erro ao enviar:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/status', (req, res) => {
+  res.json({
+    connected: isConnected,
+    qrReady: !!lastQR,
+    attempts: connectionAttempts,
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  connectWhatsApp();
+});
